@@ -1,0 +1,56 @@
+name: build
+
+on:
+  push:
+    branches: [ master ]
+  pull_request:
+    branches: [ master ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v2
+      
+    - name: Set up JDK
+      uses: actions/setup-java@v1
+      with:
+        java-version: '11'
+        java-package: jdk
+
+    - name: Cache Maven dependencies
+      uses: actions/cache@v1
+      with:
+       path: ~/.m2/repository
+       key: ${{ runner.os }}-maven-${{ hashFiles('**/pom.xml') }}
+       restore-keys: |
+         ${{ runner.os }}-maven-
+    
+    - name: Compile source
+      run: |
+        chmod +x mvnw
+        ./mvnw -B -DskipTests clean compile
+
+    - name: Run unit tests
+      run: ./mvnw -B test
+    
+    - name: Build
+      run: ./mvnw -B -DskipTests package install
+    
+    - name: Analyze with SonarCloud
+      run: ./mvnw -B org.jacoco:jacoco-maven-plugin:prepare-agent verify sonar:sonar -Dsonar.projectKey=hamafzar_weather-server -Dsonar.projectName=weather-server -Dsonar.organization=hamafzar -Dsonar.host.url=https://sonarcloud.io -Dsonar.login=$SONAR_TOKEN
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+    
+    - name: Build Docker image
+      run: docker build -t hamafzar/weather-server .
+    
+    - name: Push Docker image
+      env:
+        DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+        DOCKERHUB_PASSWORD: ${{ secrets.DOCKERHUB_PASSWORD }}
+      run: |
+        docker login --username $DOCKERHUB_USERNAME --password $DOCKERHUB_PASSWORD
+        docker push hamafzar/weather-server:latest
